@@ -258,6 +258,11 @@ origin**, đã có `render.yaml`. Cách này tránh third-party cookie bị brow
    database, `.venv` hoặc node_modules.
 2. Tạo persistent PostgreSQL bên ngoài. Lấy connection URL với SSL phù hợp nhà
    cung cấp (`?sslmode=require` nếu cần). Đổi prefix thành `postgresql+psycopg://`.
+   Bot truy cập database liên tục 24/7, nên database không bao giờ "ngủ": gói free
+   tính theo compute-hours (ví dụ Neon ~100 CU-giờ/tháng) sẽ hết giữa tháng. Supabase
+   free (500 MB, chỉ pause khi 7 ngày không hoạt động) phù hợp hơn; chọn region
+   Frankfurt và dùng chuỗi **Session pooler** (IPv4). Kiểm tra lại giới hạn gói free
+   trên trang chính thức trước khi dùng.
 3. Trong Render tạo Blueprint từ repo. Chọn service `btc-flowpilot-demo`.
 4. Điền DATABASE_URL, ADMIN_PASSWORD, ENCRYPTION_KEY, SESSION_KEY. Giữ encryption
    key cố định. Telegram tùy chọn để trống.

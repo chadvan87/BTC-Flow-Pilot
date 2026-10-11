@@ -261,3 +261,14 @@ def test_whale_api():
         assert c.post("/api/whales/research",headers=h,json={"symbol":"WIFUSDT","approve":True}).status_code==409
         assert c.post("/api/whales/research",headers=h,json={"symbol":"WIFUSDT","approve":False}).status_code==200
         assert "whale" in c.get("/api/signals?symbol=BTCUSDT").json()
+
+def test_fills_cached_and_flushed_without_per_fill_db_writes(svc):
+    svc.apply_snapshot(A1,snapshot(NOW-10*MIN,[]),{})
+    writes=[];orig=svc.db.put
+    svc.db.put=lambda k,v:(writes.append(k),orig(k,v))
+    svc.flushed=__import__("time").monotonic() # just flushed
+    for i in range(5):svc.ingest(A1,[fill(tid=100+i,start=str(i),t=NOW-MIN+i)],"ws")
+    assert not [k for k in writes if k.startswith("whale:fills:")] and len(svc.fills(A1))==5
+    assert "last_fill_ms" not in svc.state(A1) # not advanced until persisted
+    svc.flush(force=True)
+    assert len(svc.db.get("whale:fills:"+A1))==5 and svc.state(A1)["last_fill_ms"]==NOW-MIN+4

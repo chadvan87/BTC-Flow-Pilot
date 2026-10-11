@@ -22,7 +22,7 @@ from app.whales.bias import coin_bias, cohort, confirmation, wallet_weight
 from app.whales import discovery
 
 API="https://api.hyperliquid.xyz";WS_URL="wss://api.hyperliquid.xyz/ws"
-WS_MAX_USERS=10;RETENTION_MS=24*3600_000;MAX_FILLS=4000;HISTORY_EVERY_MS=6*3600_000;DISCOVERY_EVERY_S=600;PAGE_LIMIT=5
+WS_MAX_USERS=10;FLUSH_EVERY_S=30;RETENTION_MS=24*3600_000;MAX_FILLS=4000;HISTORY_EVERY_MS=6*3600_000;DISCOVERY_EVERY_S=600;PAGE_LIMIT=5
 
 class WeightLimiter:
     def __init__(self,per_minute=600,clock=time.monotonic,sleep=asyncio.sleep):
@@ -41,12 +41,24 @@ class WhaleService:
         self.limiter=WeightLimiter();self.http=None;self.tasks=[];self.running=False
         self.ws_connected=False;self.ws_users=[];self.ws_last_ms=None
         self.context={};self.context_ms=None;self.suggestions=[];self.discovery_at=0.;self.errors={}
+        # Fill histories live in memory and are flushed periodically: re-reading/re-writing a ~1 MB blob per
+        # incoming fill would cost gigabytes of database transfer per day on a hosted database.
+        self.cache={};self.dirty=set();self.flushed=time.monotonic()
     # ---------- persistence ----------
     def config(self):return WhaleConfig(**self.db.get("whale:config",{}))
     def save_config(self,cfg):self.db.put("whale:config",cfg.model_dump())
     def state(self,user):return self.db.get("whale:wallet:"+user,{})
     def put_state(self,user,st):self.db.put("whale:wallet:"+user,st)
-    def fills(self,user):return self.db.get("whale:fills:"+user,[])
+    def fills(self,user):
+        if user not in self.cache:self.cache[user]=self.db.get("whale:fills:"+user,[])
+        return self.cache[user]
+    def flush(self,force=False):
+        if not self.dirty or (not force and time.monotonic()-self.flushed<FLUSH_EVERY_S):return
+        for user in list(self.dirty):
+            rows=self.cache.get(user,[]);self.db.put("whale:fills:"+user,rows)
+            # last_fill_ms only advances with persisted fills, so a crash before flush is recovered by REST backfill.
+            st=self.state(user);st["last_fill_ms"]=max([st.get("last_fill_ms") or 0]+[f["time"] for f in rows]);self.put_state(user,st)
+        self.dirty.clear();self.flushed=time.monotonic()
     def synthetic(self,user):return self.db.get("whale:synthetic:"+user,[])
     def research(self):return self.db.get("whale:research",[])
     # ---------- ingestion ----------
@@ -60,8 +72,7 @@ class WhaleService:
             if n["time"]<=baseline or n["time"]<keep or n["tid"] in seen or n["side"] not in {"B","A"}:continue
             seen.add(n["tid"]);n["source"]=source;new.append(n)
         if new:
-            self.db.put("whale:fills:"+user,([f for f in existing if f["time"]>=keep]+new)[-MAX_FILLS:])
-            st=self.state(user);st["last_fill_ms"]=max([st.get("last_fill_ms") or 0]+[f["time"] for f in new]);self.put_state(user,st)
+            self.cache[user]=([f for f in existing if f["time"]>=keep]+new)[-MAX_FILLS:];self.dirty.add(user);self.flush()
         return len(new)
     @staticmethod
     def positions(snapshot):
@@ -164,6 +175,7 @@ class WhaleService:
                 except Exception as e:st=self.state(user);st["error"]=type(e).__name__;self.put_state(user,st)
             try:await self.refresh_discovery(cfg);self.errors.pop("discovery",None)
             except Exception as e:self.errors["discovery"]=type(e).__name__
+            self.flush(force=True)
             await asyncio.sleep(max(5,cfg.poll_seconds-(time.monotonic()-started)))
     def ws_targets(self):return [w.address.lower() for w in self.config().wallets][:WS_MAX_USERS]
     def handle_ws(self,msg):
@@ -193,6 +205,7 @@ class WhaleService:
     async def start(self):
         self.running=True;self.tasks=[asyncio.create_task(self.poll_loop()),asyncio.create_task(self.ws_loop())]
     async def close(self):
+        self.flush(force=True)
         for t in self.tasks:t.cancel()
         await asyncio.gather(*self.tasks,return_exceptions=True);self.running=False
         if self.http:await self.http.aclose();self.http=None
