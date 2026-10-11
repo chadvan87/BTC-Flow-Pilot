@@ -44,3 +44,7 @@ def test_built_dashboard_served_same_origin():
         r=c.get('/');assert r.status_code==200
         asset=re.search(r'src="([^"]+\.js)"',r.text).group(1)
         assert c.get(asset).status_code==200
+
+def test_health_answers_head_for_uptime_monitors():
+    with TestClient(app) as c:
+        assert c.head('/health').status_code==200 and c.get('/health').status_code==200

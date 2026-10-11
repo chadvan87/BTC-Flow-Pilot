@@ -54,7 +54,8 @@ async def exchange_error(request,e):return JSONResponse(status_code=502,content=
 async def internal_error(request,e):
     # No upstream URLs or secret payloads returned.
     return JSONResponse(status_code=503,content={"detail":"Operation failed: "+type(e).__name__+". Check feed/account and reconcile."})
-@app.get("/health")
+# HEAD too: uptime monitors (e.g. UptimeRobot free) probe with HEAD; otherwise the static mount answers 404.
+@app.api_route("/health",methods=["GET","HEAD"])
 def health():return {"status":"ok","real_trading":False,"auto_trading":"DEMO" if engine.control().get("auto") else False}
 class Login(BaseModel):password:str=Field(min_length=1,max_length=256)
 attempts={}
