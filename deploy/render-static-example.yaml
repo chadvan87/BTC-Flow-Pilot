@@ -1,0 +1,11 @@
+# Optional separate frontend. Merge into render.yaml only if you want split hosting.
+# Same-origin combined service is the recommended beginner setup.
+services:
+  - type: web
+    name: flowpilot-dashboard
+    runtime: static
+    buildCommand: npm ci --prefix frontend && npm run build --prefix frontend
+    staticPublishPath: frontend/dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false

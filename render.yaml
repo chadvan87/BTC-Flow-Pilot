@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: btc-flowpilot-demo
+    runtime: python
+    plan: free
+    # Binance blocks US IPs; Render's default region is Oregon (US).
+    region: frankfurt
+    buildCommand: pip install -r backend/requirements.txt && npm ci --prefix frontend && npm run build --prefix frontend
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --proxy-headers --forwarded-allow-ips '*'
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.14
+      - key: NODE_VERSION
+        value: 22.17.0
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: SESSION_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: ALLOW_LOCAL_HTTP
+        value: "false"
+      - key: ENABLE_MARKET_FEED
+        value: "true"
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false

@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: flowpilot
+      POSTGRES_USER: flowpilot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - flowpilot_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowpilot -d flowpilot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+volumes:
+  flowpilot_pg:
